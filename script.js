@@ -3,16 +3,16 @@
  * Version finale - intégration complète avec Google Sheets
  */
 
-// Configuration Google Apps Script
-// ⚠️ IMPORTANT: Remplacez cette URL par l'URL de votre déploiement Google Apps Script
-const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbworsx56DoeaAIt8M8csuJTQdHH6o0vJmiPeC89vRZBN9WLJaIx_ge6uLO4kVRy0g2K/exec';
+// Configuration Airtable
+const AIRTABLE_API_KEY = 'patWNDTQ0bIhzuz5o.9e6077761b540a1d8af475194055de5d397db0acb7a60593c3eeaf1bbe951d10';
+const AIRTABLE_BASE_ID = 'appvmxyJml5pHuoaM';
+const AIRTABLE_TABLE_NAME = 'Invites';
 
 // Variables globales
 let guests = [];
 let filteredGuests = [];
 let currentPage = 'guests';
 let isOnline = navigator.onLine;
-let pendingChanges = [];
 
 // Initialisation de l'application
 document.addEventListener('DOMContentLoaded', function() {
@@ -23,11 +23,11 @@ function initializeApp() {
     setupEventListeners();
     showLoadingState();
     
-    // Charger les données depuis Google Sheets
-    loadGuestsFromSheet()
+    // Charger les données depuis Airtable
+    loadGuestsFromAirtable()
         .then(() => {
             hideLoadingState();
-            populateTableFilter();
+        
             displayGuests();
             updateStats();
             updateLastSyncTime();
@@ -35,15 +35,22 @@ function initializeApp() {
         .catch(error => {
             console.error('Erreur lors du chargement:', error);
             hideLoadingState();
-            
-            // Fallback: charger depuis localStorage si Google Sheets échoue
-            loadFromLocalStorage();
-            populateTableFilter();
-            displayGuests();
-            updateStats();
-            
-            showNotification('Mode hors ligne - Données locales chargées', 'warning');
             updateSyncStatus('offline');
+            
+            showNotification('Impossible de se connecter à Airtable. Vérifiez votre connexion internet.', 'error');
+            
+            // Afficher un message d'erreur dans la grille
+            const guestsGrid = document.getElementById('guestsGrid');
+            guestsGrid.innerHTML = `
+                <div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: #e74c3c;">
+                    <i class="fas fa-exclamation-triangle" style="font-size: 3em; margin-bottom: 20px;"></i>
+                    <h3>Connexion impossible</h3>
+                    <p>Vérifiez votre connexion internet et rechargez la page</p>
+                    <button onclick="window.location.reload()" class="nav-btn" style="margin-top: 20px;">
+                        <i class="fas fa-refresh"></i> Recharger
+                    </button>
+                </div>
+            `;
         });
     
     // Écouter les changements de connexion
@@ -68,14 +75,14 @@ function setupEventListeners() {
 // ==================== FONCTIONS GOOGLE SHEETS ====================
 
 /**
- * Charge tous les invités depuis Google Sheets
+ * Charge tous les invités depuis Airtable
  */
-async function loadGuestsFromSheet() {
+async function loadGuestsFromAirtable() {
     try {
-        const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=getAllGuests`, {
-            method: 'GET',
+        const response = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_TABLE_NAME}`, {
             headers: {
-                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${AIRTABLE_API_KEY}`,
+                'Content-Type': 'application/json'
             }
         });
         
@@ -85,39 +92,47 @@ async function loadGuestsFromSheet() {
         
         const result = await response.json();
         
-        if (result.status === 'success') {
-            guests = result.guests || [];
-            filteredGuests = [...guests];
-            
-            // Sauvegarder localement comme backup
-            saveToLocalStorage();
-            updateSyncStatus('online');
-            
-            console.log(`✅ ${guests.length} invités chargés depuis Google Sheets`);
-            return guests;
-        } else {
-            throw new Error(result.message || 'Erreur inconnue');
-        }
+        // Transformer les données Airtable en format de l'app
+        guests = result.records.map(record => ({
+            id: record.id,
+            name: record.fields.nom || '',
+            table: record.fields.table || 1,
+            tableName: `Table ${record.fields.table || 1}`, // Générer automatiquement
+            present: record.fields.present || false,
+            phone: '', // Pas utilisé
+            email: ''  // Pas utilisé
+        }));
+        
+        filteredGuests = [...guests];
+        updateSyncStatus('online');
+        
+        console.log(`✅ ${guests.length} invités chargés depuis Airtable`);
+        return guests;
     } catch (error) {
-        console.error('Erreur lors du chargement depuis Google Sheets:', error);
+        console.error('Erreur lors du chargement depuis Airtable:', error);
         updateSyncStatus('offline');
         throw error;
     }
 }
 
 /**
- * Met à jour un invité dans Google Sheets
+ * Met à jour un invité dans Airtable
  */
-async function updateGuestInSheet(guest) {
+async function updateGuestInAirtable(guest) {
     try {
-        const response = await fetch(GOOGLE_SCRIPT_URL, {
-            method: 'POST',
+        const response = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_TABLE_NAME}/${guest.id}`, {
+            method: 'PATCH',
             headers: {
-                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${AIRTABLE_API_KEY}`,
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                action: 'updateGuest',
-                guest: guest
+                fields: {
+                    'nom': guest.name,
+                    'table': guest.table,
+                    'present': guest.present
+                },
+                typecast: true
             })
         });
         
@@ -126,36 +141,33 @@ async function updateGuestInSheet(guest) {
         }
         
         const result = await response.json();
-        
-        if (result.status === 'success') {
-            console.log('✅ Invité mis à jour dans Google Sheets:', guest.name);
-            updateLastSyncTime();
-            return true;
-        } else {
-            throw new Error(result.message || 'Erreur lors de la mise à jour');
-        }
+        console.log('✅ Invité mis à jour dans Airtable:', guest.name);
+        updateLastSyncTime();
+        return true;
     } catch (error) {
         console.error('Erreur lors de la mise à jour:', error);
-        
-        // En cas d'erreur, ajouter aux modifications en attente
-        addToPendingChanges('update', guest);
         throw error;
     }
 }
 
 /**
- * Ajoute un nouvel invité dans Google Sheets
+ * Ajoute un nouvel invité dans Airtable
  */
-async function addGuestToSheet(guest) {
+async function addGuestToAirtable(guest) {
     try {
-        const response = await fetch(GOOGLE_SCRIPT_URL, {
+        const response = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_TABLE_NAME}`, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${AIRTABLE_API_KEY}`,
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                action: 'addGuest',
-                guest: guest
+                fields: {
+                    'nom': guest.name,
+                    'table': guest.table,
+                    'present': guest.present || false
+                },
+                typecast: true
             })
         });
         
@@ -164,89 +176,34 @@ async function addGuestToSheet(guest) {
         }
         
         const result = await response.json();
+        console.log('✅ Invité ajouté dans Airtable:', guest.name);
+        updateLastSyncTime();
         
-        if (result.status === 'success') {
-            console.log('✅ Invité ajouté dans Google Sheets:', guest.name);
-            updateLastSyncTime();
-            return result.guest;
-        } else {
-            throw new Error(result.message || 'Erreur lors de l\'ajout');
-        }
+        // Retourner l'invité avec l'ID Airtable
+        return {
+            ...guest,
+            id: result.id
+        };
     } catch (error) {
         console.error('Erreur lors de l\'ajout:', error);
-        addToPendingChanges('add', guest);
         throw error;
     }
 }
 
-// ==================== GESTION HORS LIGNE ====================
+// ==================== GESTION CONNEXION ====================
 
 function handleOnlineStatus() {
     isOnline = true;
     console.log('🌐 Connexion rétablie');
     updateSyncStatus('online');
-    showNotification('Connexion rétablie - Synchronisation en cours...', 'success');
-    
-    // Synchroniser les modifications en attente
-    syncPendingChanges();
+    showNotification('Connexion rétablie', 'success');
 }
 
 function handleOfflineStatus() {
     isOnline = false;
-    console.log('📴 Mode hors ligne');
+    console.log('📴 Connexion perdue');
     updateSyncStatus('offline');
-    showNotification('Mode hors ligne - Les modifications seront synchronisées plus tard', 'warning');
-}
-
-function addToPendingChanges(action, data) {
-    pendingChanges.push({
-        action: action,
-        data: data,
-        timestamp: Date.now()
-    });
-    
-    // Sauvegarder les modifications en attente
-    localStorage.setItem('pendingChanges', JSON.stringify(pendingChanges));
-    updatePendingChangesIndicator();
-    
-    console.log(`📝 Modification en attente ajoutée: ${action}`, data);
-}
-
-async function syncPendingChanges() {
-    if (pendingChanges.length === 0) return;
-    
-    console.log(`🔄 Synchronisation de ${pendingChanges.length} modifications en attente...`);
-    updateSyncStatus('syncing');
-    
-    const successfulSyncs = [];
-    
-    for (const change of pendingChanges) {
-        try {
-            switch (change.action) {
-                case 'update':
-                    await updateGuestInSheet(change.data);
-                    break;
-                case 'add':
-                    await addGuestToSheet(change.data);
-                    break;
-            }
-            successfulSyncs.push(change);
-        } catch (error) {
-            console.error('Erreur lors de la synchronisation d\'une modification:', error);
-            // Garder les modifications qui ont échoué
-        }
-    }
-    
-    // Retirer les modifications synchronisées avec succès
-    pendingChanges = pendingChanges.filter(change => !successfulSyncs.includes(change));
-    localStorage.setItem('pendingChanges', JSON.stringify(pendingChanges));
-    updatePendingChangesIndicator();
-    
-    updateSyncStatus('online');
-    
-    if (successfulSyncs.length > 0) {
-        showNotification(`${successfulSyncs.length} modifications synchronisées`, 'success');
-    }
+    showNotification('Connexion internet perdue', 'error');
 }
 
 // ==================== FONCTIONS UI ====================
@@ -268,91 +225,106 @@ function showPage(page) {
     }
 }
 
-function populateTableFilter() {
-    const tableFilter = document.getElementById('tableFilter');
-    // Vider les options existantes sauf la première
-    tableFilter.innerHTML = '<option value="">Toutes les tables</option>';
-    
-    const tables = [...new Set(guests.map(guest => guest.table))].sort((a, b) => a - b);
-    
-    tables.forEach(tableNum => {
-        const tableName = guests.find(g => g.table === tableNum)?.tableName || `Table ${tableNum}`;
-        const option = document.createElement('option');
-        option.value = tableNum;
-        option.textContent = `Table ${tableNum} - ${tableName}`;
-        tableFilter.appendChild(option);
-    });
-}
+// Cette fonction n'est plus utilisée car on a supprimé les filtres
 
 function filterGuests() {
     const searchTerm = document.getElementById('searchInput').value.toLowerCase();
-    const tableFilter = document.getElementById('tableFilter').value;
-    const statusFilter = document.getElementById('statusFilter').value;
     
     filteredGuests = guests.filter(guest => {
-        const matchesSearch = guest.name.toLowerCase().includes(searchTerm) ||
-                            (guest.tableName && guest.tableName.toLowerCase().includes(searchTerm)) ||
-                            (guest.email && guest.email.toLowerCase().includes(searchTerm));
-        
-        const matchesTable = !tableFilter || guest.table.toString() === tableFilter;
-        
-        const matchesStatus = !statusFilter || 
-                            (statusFilter === 'present' && guest.present) ||
-                            (statusFilter === 'absent' && !guest.present);
-        
-        return matchesSearch && matchesTable && matchesStatus;
+        return guest.name.toLowerCase().includes(searchTerm);
     });
     
     displayGuests();
 }
 
 function displayGuests() {
-    const guestsGrid = document.getElementById('guestsGrid');
-    guestsGrid.innerHTML = '';
+    const tablesContainer = document.getElementById('tablesContainer');
+    tablesContainer.innerHTML = '';
     
     if (filteredGuests.length === 0) {
-        guestsGrid.innerHTML = `
-            <div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: #666;">
+        tablesContainer.innerHTML = `
+            <div style="text-align: center; padding: 40px; color: #666;">
                 <i class="fas fa-search" style="font-size: 3em; margin-bottom: 20px; opacity: 0.5;"></i>
                 <h3>Aucun invité trouvé</h3>
-                <p>Essayez de modifier vos critères de recherche</p>
+                <p>Essayez de modifier votre recherche</p>
             </div>
         `;
         return;
     }
     
+    // Grouper les invités par table
+    const guestsByTable = {};
     filteredGuests.forEach(guest => {
-        const guestCard = createGuestCard(guest);
-        guestsGrid.appendChild(guestCard);
+        const tableNum = guest.table;
+        if (!guestsByTable[tableNum]) {
+            guestsByTable[tableNum] = [];
+        }
+        guestsByTable[tableNum].push(guest);
     });
+    
+    // Trier les tables par numéro
+    const sortedTables = Object.keys(guestsByTable).sort((a, b) => parseInt(a) - parseInt(b));
+    
+    // Afficher chaque table
+    sortedTables.forEach(tableNum => {
+        const tableGuests = guestsByTable[tableNum];
+        const presentCount = tableGuests.filter(g => g.present).length;
+        const totalCount = tableGuests.length;
+        
+        const tableSection = document.createElement('div');
+        tableSection.className = 'table-section';
+        
+        tableSection.innerHTML = `
+            <div class="table-header">
+                <div class="table-title">
+                    <i class="fas fa-table"></i>
+                    <h3>Table ${tableNum}</h3>
+                </div>
+                <div class="table-stats">
+                    <span class="present-count">${presentCount}</span>
+                    <span class="separator">/</span>
+                    <span class="total-count">${totalCount}</span>
+                    <span class="label">présents</span>
+                </div>
+            </div>
+            <div class="guests-grid">
+                ${tableGuests.map(guest => createGuestCardHTML(guest)).join('')}
+            </div>
+        `;
+        
+        tablesContainer.appendChild(tableSection);
+    });
+}
+
+function createGuestCardHTML(guest) {
+    return `
+        <div class="guest-card">
+            <div class="guest-header">
+                <div class="guest-name">${guest.name}</div>
+                <span class="status-badge ${guest.present ? 'present' : 'absent'}">
+                    ${guest.present ? 'Présent' : 'Absent'}
+                </span>
+            </div>
+            ${guest.present ? 
+                `<div class="presence-locked">
+                    <i class="fas fa-lock"></i>
+                    <span>Présence confirmée</span>
+                </div>` :
+                `<button class="toggle-presence absent" 
+                        onclick="togglePresence('${guest.id}')"
+                        ${!isOnline ? 'disabled title="Connexion internet requise"' : ''}>
+                    <i class="fas fa-check"></i>
+                    Marquer comme Présent
+                </button>`
+            }
+        </div>
+    `;
 }
 
 function createGuestCard(guest) {
     const card = document.createElement('div');
     card.className = 'guest-card';
-    
-    // Indicateur de statut de synchronisation
-    const syncStatus = isOnline ? '' : '<i class="fas fa-wifi-slash" style="color: orange; margin-left: 10px;" title="Mode hors ligne"></i>';
-    
-    card.innerHTML = `
-        <div class="guest-header">
-            <div class="guest-name">${guest.name}${syncStatus}</div>
-            <span class="status-badge ${guest.present ? 'present' : 'absent'}">
-                ${guest.present ? 'Présent' : 'Absent'}
-            </span>
-        </div>
-        <div class="guest-info">
-            <div><i class="fas fa-table"></i> Table ${guest.table} - ${guest.tableName || 'Sans nom'}</div>
-            <div><i class="fas fa-phone"></i> ${guest.phone || 'Non renseigné'}</div>
-            <div><i class="fas fa-envelope"></i> ${guest.email || 'Non renseigné'}</div>
-        </div>
-        <button class="toggle-presence ${guest.present ? 'present' : 'absent'}" 
-                onclick="togglePresence(${guest.id})"
-                ${!isOnline ? 'title="Mode hors ligne - sera synchronisé plus tard"' : ''}>
-            ${guest.present ? 'Marquer comme Absent' : 'Marquer comme Présent'}
-        </button>
-    `;
-    
+    card.innerHTML = createGuestCardHTML(guest);
     return card;
 }
 
@@ -360,26 +332,37 @@ async function togglePresence(guestId) {
     const guest = guests.find(g => g.id === guestId);
     if (!guest) return;
     
+    // Si l'invité est déjà présent, ne rien faire
+    if (guest.present) {
+        showNotification(`${guest.name} est déjà marqué(e) comme présent(e) ✅`, 'info');
+        return;
+    }
+    
+    // Vérifier la connexion internet
+    if (!isOnline) {
+        showNotification('Connexion internet requise pour modifier les statuts', 'error');
+        return;
+    }
+    
     const oldPresent = guest.present;
-    guest.present = !guest.present;
+    guest.present = true; // Seulement absent -> présent possible
     
     // Mettre à jour l'affichage immédiatement
     displayGuests();
     updateStats();
-    saveToLocalStorage();
     
-    // Essayer de synchroniser avec Google Sheets
-    if (isOnline) {
-        try {
-            await updateGuestInSheet(guest);
-            showNotification(`${guest.name} marqué(e) comme ${guest.present ? 'présent(e)' : 'absent(e)'}`, 'success');
-        } catch (error) {
-            console.error('Erreur lors de la mise à jour:', error);
-            showNotification(`Modification sauvée localement - sera synchronisée plus tard`, 'warning');
-        }
-    } else {
-        addToPendingChanges('update', guest);
-        showNotification(`${guest.name} marqué(e) comme ${guest.present ? 'présent(e)' : 'absent(e)'} (hors ligne)`, 'warning');
+    // Synchroniser avec Airtable
+    try {
+        await updateGuestInAirtable(guest);
+        showNotification(`🎉 ${guest.name} marqué(e) comme présent(e) !`, 'success');
+    } catch (error) {
+        // Annuler le changement en cas d'erreur
+        guest.present = oldPresent;
+        displayGuests();
+        updateStats();
+        
+        console.error('Erreur lors de la mise à jour:', error);
+        showNotification(`Erreur lors de la mise à jour. Vérifiez votre connexion.`, 'error');
     }
 }
 
@@ -475,22 +458,12 @@ function updateSyncStatus(status) {
     }
 }
 
-function updatePendingChangesIndicator() {
-    const pendingIndicator = document.getElementById('pendingChanges');
-    if (pendingChanges.length > 0) {
-        pendingIndicator.style.display = 'flex';
-        pendingIndicator.classList.add('warning');
-        pendingIndicator.innerHTML = `<i class="fas fa-clock"></i><span>${pendingChanges.length} modifications en attente</span>`;
-    } else {
-        pendingIndicator.style.display = 'none';
-    }
-}
+
 
 function updateLastSyncTime() {
     const now = new Date();
     const timeString = now.toLocaleTimeString('fr-FR');
     document.getElementById('lastSyncTime').textContent = timeString;
-    localStorage.setItem('lastSync', now.toISOString());
 }
 
 function showNotification(message, type = 'success') {
@@ -498,7 +471,8 @@ function showNotification(message, type = 'success') {
     const colors = {
         success: '#2ecc71',
         warning: '#f39c12',
-        error: '#e74c3c'
+        error: '#e74c3c',
+        info: '#3498db'
     };
     
     notification.style.cssText = `
@@ -518,7 +492,8 @@ function showNotification(message, type = 'success') {
     const icons = {
         success: 'fas fa-check-circle',
         warning: 'fas fa-exclamation-triangle',
-        error: 'fas fa-times-circle'
+        error: 'fas fa-times-circle',
+        info: 'fas fa-info-circle'
     };
     
     notification.innerHTML = `<i class="${icons[type] || icons.success}"></i> ${message}`;
@@ -535,36 +510,7 @@ function showNotification(message, type = 'success') {
     }, 4000);
 }
 
-function saveToLocalStorage() {
-    localStorage.setItem('weddingGuests', JSON.stringify(guests));
-    localStorage.setItem('lastSync', Date.now().toString());
-}
 
-function loadFromLocalStorage() {
-    const savedGuests = localStorage.getItem('weddingGuests');
-    const savedPendingChanges = localStorage.getItem('pendingChanges');
-    const lastSync = localStorage.getItem('lastSync');
-    
-    if (savedGuests) {
-        guests = JSON.parse(savedGuests);
-        filteredGuests = [...guests];
-    }
-    
-    if (savedPendingChanges) {
-        pendingChanges = JSON.parse(savedPendingChanges);
-        updatePendingChangesIndicator();
-    }
-    
-    if (lastSync) {
-        const syncDate = new Date(parseInt(lastSync));
-        document.getElementById('lastSyncTime').textContent = syncDate.toLocaleTimeString('fr-FR');
-    }
-    
-    console.log(`📱 ${guests.length} invités chargés depuis le stockage local`);
-    if (pendingChanges.length > 0) {
-        console.log(`⏳ ${pendingChanges.length} modifications en attente de synchronisation`);
-    }
-}
 
 // ==================== FONCTIONS AVANCÉES ====================
 
@@ -573,7 +519,7 @@ function loadFromLocalStorage() {
  */
 async function forceSync() {
     if (!isOnline) {
-        showNotification('Impossible de synchroniser hors ligne', 'error');
+        showNotification('Connexion internet requise', 'error');
         return;
     }
     
@@ -581,10 +527,9 @@ async function forceSync() {
         updateSyncStatus('syncing');
         showNotification('Synchronisation en cours...', 'warning');
         
-        await loadGuestsFromSheet();
-        await syncPendingChanges();
+        await loadGuestsFromAirtable();
         
-        populateTableFilter();
+    
         displayGuests();
         updateStats();
         
@@ -597,8 +542,7 @@ async function forceSync() {
     }
 }
 
-// Charger les modifications en attente au démarrage
-loadFromLocalStorage();
+
 
 // Raccourcis clavier utiles
 document.addEventListener('keydown', function(e) {

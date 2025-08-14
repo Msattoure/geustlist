@@ -41,16 +41,6 @@
                     <i class="fas fa-search"></i>
                     <input type="text" id="searchInput" placeholder="Rechercher un invité...">
                 </div>
-                <div class="filters">
-                    <select id="tableFilter">
-                        <option value="">Toutes les tables</option>
-                    </select>
-                    <select id="statusFilter">
-                        <option value="">Tous les statuts</option>
-                        <option value="present">Présents</option>
-                        <option value="absent">Absents</option>
-                    </select>
-                </div>
 
                 <!-- Indicateurs de statut -->
                 <div class="status-indicators">
@@ -58,15 +48,11 @@
                         <i class="fas fa-wifi"></i>
                         <span>En ligne</span>
                     </div>
-                    <div class="status-indicator" id="pendingChanges" style="display: none;">
-                        <i class="fas fa-clock"></i>
-                        <span>Modifications en attente</span>
-                    </div>
                 </div>
             </div>
 
-            <div class="guests-grid" id="guestsGrid">
-                <!-- Les invités seront affichés ici -->
+            <div class="tables-container" id="tablesContainer">
+                <!-- Les tables avec invités seront affichées ici -->
             </div>
         </div>
 

@@ -28,10 +28,9 @@
                     <div class="input-group">
                         <label for="tableNumber">Numéro de Table:</label>
                         <input type="number" id="tableNumber" min="1" max="20" value="1" required>
-                    </div>
-                    <div class="input-group">
-                        <label for="tableName">Nom de la Table:</label>
-                        <input type="text" id="tableName" placeholder="Ex: Famille, Amis, Collègues..." required>
+                        <p style="font-size: 0.9em; color: #666; margin-top: 5px;">
+                            Les invités seront assignés à "Table X" automatiquement
+                        </p>
                     </div>
                 </div>
             </div>
@@ -75,10 +74,9 @@
                     <table id="previewTableData">
                         <thead>
                             <tr>
-                                <th>Prénom</th>
-                                <th>Nom</th>
                                 <th>Nom Complet</th>
                                 <th>Table</th>
+                                <th>Statut</th>
                             </tr>
                         </thead>
                         <tbody id="previewTableBody">
@@ -110,8 +108,10 @@
     </div>
 
     <script>
-        // Configuration Google Apps Script (même URL que l'app principale)
-        const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbworsx56DoeaAIt8M8csuJTQdHH6o0vJmiPeC89vRZBN9WLJaIx_ge6uLO4kVRy0g2K/exec';
+        // Configuration Airtable (mêmes clés que l'app principale)
+        const AIRTABLE_API_KEY = 'patWNDTQ0bIhzuz5o.9e6077761b540a1d8af475194055de5d397db0acb7a60593c3eeaf1bbe951d10';
+        const AIRTABLE_BASE_ID = 'appvmxyJml5pHuoaM';
+        const AIRTABLE_TABLE_NAME = 'Invites';
 
         let csvData = [];
         let processedGuests = [];
@@ -175,10 +175,10 @@
                 const line = lines[i].trim();
                 if (line) {
                     const [firstName, lastName] = line.split(',').map(s => s.trim());
-                    if (firstName && lastName) {
+                    if (firstName) { // Seul le prénom est obligatoire
                         csvData.push({
                             firstName: firstName,
-                            lastName: lastName
+                            lastName: lastName || '' // Nom de famille optionnel
                         });
                     }
                 }
@@ -208,23 +208,19 @@
 
         function updatePreview() {
             const tableNumber = document.getElementById('tableNumber').value;
-            const tableName = document.getElementById('tableName').value;
 
-            if (!tableName.trim()) {
-                showNotification('Veuillez entrer un nom de table', 'warning');
+            if (!tableNumber || tableNumber < 1) {
+                showNotification('Veuillez entrer un numéro de table valide', 'warning');
                 return;
             }
 
             processedGuests = csvData.map((guest, index) => ({
                 id: Date.now() + index, // ID temporaire
-                name: `${guest.firstName} ${guest.lastName}`,
+                name: guest.lastName ? `${guest.firstName} ${guest.lastName}` : guest.firstName,
                 firstName: guest.firstName,
                 lastName: guest.lastName,
                 table: parseInt(tableNumber),
-                tableName: tableName.trim(),
-                present: false,
-                phone: '',
-                email: ''
+                present: false
             }));
 
             // Mettre à jour les statistiques
@@ -238,10 +234,9 @@
             processedGuests.forEach(guest => {
                 const row = tbody.insertRow();
                 row.innerHTML = `
-                    <td>${guest.firstName}</td>
-                    <td>${guest.lastName}</td>
                     <td><strong>${guest.name}</strong></td>
-                    <td>Table ${guest.table} - ${guest.tableName}</td>
+                    <td>Table ${guest.table}</td>
+                    <td><span class="status-badge absent">Absent</span></td>
                 `;
             });
 
@@ -250,13 +245,57 @@
             document.getElementById('importBtn').disabled = false;
         }
 
-        // Écouter les changements dans les champs de table
+        // Écouter les changements dans le champ de table
         document.getElementById('tableNumber').addEventListener('input', updatePreviewIfReady);
-        document.getElementById('tableName').addEventListener('input', updatePreviewIfReady);
 
         function updatePreviewIfReady() {
             if (csvData.length > 0) {
                 updatePreview();
+            }
+        }
+
+        // Fonction pour vérifier les doublons
+        async function checkForDuplicates() {
+            try {
+                const response = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_TABLE_NAME}`, {
+                    headers: {
+                        'Authorization': `Bearer ${AIRTABLE_API_KEY}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const result = await response.json();
+                const existingGuests = result.records.map(record => ({
+                    name: record.fields.nom || '',
+                    table: record.fields.table || 1
+                }));
+
+                // Vérifier les doublons
+                const duplicates = [];
+                const uniqueGuests = [];
+
+                for (const guest of processedGuests) {
+                    const isDuplicate = existingGuests.some(existing =>
+                        existing.name.toLowerCase() === guest.name.toLowerCase() &&
+                        existing.table === guest.table
+                    );
+
+                    if (isDuplicate) {
+                        duplicates.push(guest);
+                    } else {
+                        uniqueGuests.push(guest);
+                    }
+                }
+
+                return { duplicates, uniqueGuests };
+            } catch (error) {
+                console.error('Erreur lors de la vérification des doublons:', error);
+                // En cas d'erreur, on continue avec tous les invités
+                return { duplicates: [], uniqueGuests: processedGuests };
             }
         }
 
@@ -271,18 +310,38 @@
 
             // Désactiver le bouton et afficher le loading
             importBtn.disabled = true;
-            importBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Import en cours...';
+            importBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Vérification des doublons...';
 
             try {
-                // Importer chaque invité individuellement pour un meilleur contrôle
+                // Vérifier les doublons
+                const { duplicates, uniqueGuests } = await checkForDuplicates();
+
+                if (duplicates.length > 0) {
+                    const duplicateNames = duplicates.map(g => g.name).join('\n• ');
+                    const confirmMessage = `⚠️ DOUBLONS DÉTECTÉS\n\n${duplicates.length} invité(s) existe(nt) déjà dans la table ${processedGuests[0].table}:\n\n• ${duplicateNames}\n\n✅ ${uniqueGuests.length} nouveaux invités seront importés.\n\nContinuer l'import ?`;
+
+                    if (!confirm(confirmMessage)) {
+                        return;
+                    }
+                }
+
+                if (uniqueGuests.length === 0) {
+                    showNotification('❌ Tous les invités existent déjà dans cette table', 'warning');
+                    return;
+                }
+
+                importBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Import en cours...';
+
+                // Importer seulement les invités uniques
                 const results = {
                     success: 0,
-                    errors: []
+                    errors: [],
+                    duplicatesSkipped: duplicates.length
                 };
 
-                for (const guest of processedGuests) {
+                for (const guest of uniqueGuests) {
                     try {
-                        await addGuestToSheet(guest);
+                        await addGuestToAirtable(guest);
                         results.success++;
                     } catch (error) {
                         results.errors.push(`${guest.name}: ${error.message}`);
@@ -299,15 +358,20 @@
             }
         }
 
-        async function addGuestToSheet(guest) {
-            const response = await fetch(GOOGLE_SCRIPT_URL, {
+        async function addGuestToAirtable(guest) {
+            const response = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_TABLE_NAME}`, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${AIRTABLE_API_KEY}`,
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    action: 'addGuest',
-                    guest: guest
+                    fields: {
+                        'nom': guest.name,
+                        'table': guest.table,
+                        'present': guest.present || false
+                    },
+                    typecast: true
                 })
             });
 
@@ -316,11 +380,6 @@
             }
 
             const result = await response.json();
-
-            if (result.status !== 'success') {
-                throw new Error(result.message || 'Erreur inconnue');
-            }
-
             return result;
         }
 
@@ -335,6 +394,15 @@
                         <span>${results.success} invités importés avec succès</span>
                     </div>
             `;
+
+            if (results.duplicatesSkipped > 0) {
+                html += `
+                    <div class="result-stat warning">
+                        <i class="fas fa-info-circle"></i>
+                        <span>${results.duplicatesSkipped} doublons ignorés</span>
+                    </div>
+                `;
+            }
 
             if (results.errors.length > 0) {
                 html += `
@@ -474,8 +542,8 @@
         }
 
         .table-config {
-            display: grid;
-            grid-template-columns: 1fr 2fr;
+            display: flex;
+            flex-direction: column;
             gap: 20px;
         }
 
@@ -693,6 +761,12 @@
             background: rgba(231, 76, 60, 0.1);
             border: 2px solid #e74c3c;
             color: #e74c3c;
+        }
+
+        .result-stat.warning {
+            background: rgba(243, 156, 18, 0.1);
+            border: 2px solid #f39c12;
+            color: #f39c12;
         }
 
         .error-details {

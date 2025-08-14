@@ -139,8 +139,9 @@ nav {
 
 .guests-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: 20px;
+    padding: 25px;
 }
 
 .guest-card {
@@ -431,4 +432,89 @@ nav {
 
 ::-webkit-scrollbar-thumb:hover {
     background: #667eea;
+}
+
+/* ==================== STYLES POUR GROUPEMENT PAR TABLE ==================== */
+
+.tables-container {
+    margin-top: 30px;
+}
+
+.table-section {
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    border-radius: 15px;
+    margin-bottom: 30px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+}
+
+.table-header {
+    background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+    color: white;
+    padding: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.table-title {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.table-title h3 {
+    font-size: 1.5em;
+    margin: 0;
+}
+
+.table-title i {
+    font-size: 1.2em;
+}
+
+.table-stats {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 1.1em;
+    font-weight: bold;
+}
+
+.present-count {
+    color: #2ecc71;
+}
+
+.total-count {
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.separator {
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.label {
+    color: rgba(255, 255, 255, 0.8);
+    font-weight: normal;
+    font-size: 0.9em;
+}
+
+/* ==================== PRÉSENCE VERROUILLÉE ==================== */
+
+.presence-locked {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 12px 20px;
+    background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);
+    color: white;
+    border-radius: 25px;
+    font-weight: bold;
+    font-size: 0.9em;
+    margin-top: 15px;
+}
+
+.presence-locked i {
+    font-size: 1.1em;
 }
