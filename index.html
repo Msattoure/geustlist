@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestion des Invités - Mariage</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1><i class="fas fa-heart"></i> Gestion des Invités</h1>
+            <div class="sync-status" id="syncStatus">
+                <i class="fas fa-cloud" id="syncIcon"></i>
+                <span id="syncText">Synchronisé</span>
+            </div>
+            <nav>
+                <button id="guestsBtn" class="nav-btn active">
+                    <i class="fas fa-users"></i> Invités
+                </button>
+                <button id="statsBtn" class="nav-btn">
+                    <i class="fas fa-chart-bar"></i> Statistiques
+                </button>
+                <button id="syncBtn" class="nav-btn sync-btn" onclick="forceSync()" title="Forcer la synchronisation">
+                    <i class="fas fa-sync-alt"></i> Sync
+                </button>
+                <button onclick="window.location.href='import-csv.html'" class="nav-btn import-btn"
+                    title="Importer des invités depuis CSV">
+                    <i class="fas fa-file-import"></i> Import
+                </button>
+            </nav>
+        </header>
+
+        <!-- Page des Invités -->
+        <div id="guestsPage" class="page active">
+            <div class="search-section">
+                <div class="search-box">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="searchInput" placeholder="Rechercher un invité...">
+                </div>
+                <div class="filters">
+                    <select id="tableFilter">
+                        <option value="">Toutes les tables</option>
+                    </select>
+                    <select id="statusFilter">
+                        <option value="">Tous les statuts</option>
+                        <option value="present">Présents</option>
+                        <option value="absent">Absents</option>
+                    </select>
+                </div>
+
+                <!-- Indicateurs de statut -->
+                <div class="status-indicators">
+                    <div class="status-indicator" id="onlineStatus">
+                        <i class="fas fa-wifi"></i>
+                        <span>En ligne</span>
+                    </div>
+                    <div class="status-indicator" id="pendingChanges" style="display: none;">
+                        <i class="fas fa-clock"></i>
+                        <span>Modifications en attente</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="guests-grid" id="guestsGrid">
+                <!-- Les invités seront affichés ici -->
+            </div>
+        </div>
+
+        <!-- Page des Statistiques -->
+        <div id="statsPage" class="page">
+            <div class="stats-container">
+                <div class="stats-header">
+                    <h2><i class="fas fa-chart-line"></i> Statistiques en Temps Réel</h2>
+                    <div class="last-sync" id="lastSync">
+                        Dernière sync: <span id="lastSyncTime">-</span>
+                    </div>
+                </div>
+
+                <div class="stats-cards">
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-users"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3 id="totalGuests">0</h3>
+                            <p>Total Invités</p>
+                        </div>
+                    </div>
+
+                    <div class="stat-card present">
+                        <div class="stat-icon">
+                            <i class="fas fa-check-circle"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3 id="presentGuests">0</h3>
+                            <p>Présents</p>
+                        </div>
+                    </div>
+
+                    <div class="stat-card absent">
+                        <div class="stat-icon">
+                            <i class="fas fa-times-circle"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3 id="absentGuests">0</h3>
+                            <p>Absents</p>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-percentage"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3 id="attendanceRate">0%</h3>
+                            <p>Taux de Présence</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tables-stats">
+                    <h2><i class="fas fa-table"></i> Statistiques par Table</h2>
+                    <div id="tablesStatsGrid">
+                        <!-- Statistiques par table -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+
+    <style>
+        /* Styles additionnels pour la version Google Sheets */
+        .sync-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 10px;
+        }
+
+        .sync-status.syncing #syncIcon {
+            animation: spin 1s linear infinite;
+            color: #f39c12;
+        }
+
+        .sync-status.offline {
+            color: #e74c3c;
+        }
+
+        .sync-status.online {
+            color: #2ecc71;
+        }
+
+        .sync-btn {
+            background: #2ecc71 !important;
+            border-color: #2ecc71 !important;
+            color: white !important;
+        }
+
+        .sync-btn:hover {
+            background: #27ae60 !important;
+        }
+
+        .import-btn {
+            background: #f39c12 !important;
+            border-color: #f39c12 !important;
+            color: white !important;
+        }
+
+        .import-btn:hover {
+            background: #e67e22 !important;
+        }
+
+        .status-indicators {
+            display: flex;
+            gap: 15px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 8px 12px;
+            background: rgba(46, 204, 113, 0.1);
+            border: 1px solid #2ecc71;
+            border-radius: 20px;
+            font-size: 0.85em;
+            color: #2ecc71;
+        }
+
+        .status-indicator.offline {
+            background: rgba(231, 76, 60, 0.1);
+            border-color: #e74c3c;
+            color: #e74c3c;
+        }
+
+        .status-indicator.warning {
+            background: rgba(243, 156, 18, 0.1);
+            border-color: #f39c12;
+            color: #f39c12;
+        }
+
+        .stats-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .stats-header h2 {
+            color: #764ba2;
+            margin: 0;
+        }
+
+        .last-sync {
+            font-size: 0.9em;
+            color: #666;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        /* Responsive pour les nouveaux éléments */
+        @media (max-width: 768px) {
+            .stats-header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .status-indicators {
+                justify-content: center;
+            }
+        }
+    </style>
+</body>
+
+</html>
