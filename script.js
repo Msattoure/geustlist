@@ -5,7 +5,7 @@
 
 // Configuration Google Apps Script
 // ⚠️ IMPORTANT: Remplacez cette URL par l'URL de votre déploiement Google Apps Script
-const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbylCbEBB5iNAJiwePixo0tP5pS0ztsT8EYFrr8A1aaEcOqCBXby781QYIuAATWR1T64/exec';
+const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbworsx56DoeaAIt8M8csuJTQdHH6o0vJmiPeC89vRZBN9WLJaIx_ge6uLO4kVRy0g2K/exec';
 
 // Variables globales
 let guests = [];
